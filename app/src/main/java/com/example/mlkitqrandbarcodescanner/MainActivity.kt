@@ -7,8 +7,15 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import android.os.Bundle
 import android.util.DisplayMetrics
+import android.util.Log
+import android.view.View
+import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -16,9 +23,9 @@ import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.databinding.DataBindingUtil
+import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.mlkitqrandbarcodescanner.databinding.ActivityMainBinding
-import com.google.mlkit.vision.barcode.Barcode
-import com.google.mlkit.vision.barcode.Barcode.FORMAT_QR_CODE
+import com.google.zxing.Result
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
@@ -30,13 +37,15 @@ import kotlin.math.min
 val REQUIRED_PERMISSIONS = arrayOf(Manifest.permission.CAMERA)
 const val RATIO_4_3_VALUE = 4.0 / 3.0
 const val RATIO_16_9_VALUE = 16.0 / 9.0
-typealias BarcodeAnalyzerListener = (barcode: MutableList<Barcode>) -> Unit
+typealias BarcodeAnalyzerListener = (barcode: MutableList<Result>) -> Unit
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), QRCodeFoundListener {
 
     private val executor by lazy {
         Executors.newSingleThreadExecutor()
     }
+
+    private lateinit var box: Box
 
     /**
      * Process result from permission request dialog box, has the request
@@ -55,21 +64,26 @@ class MainActivity : AppCompatActivity() {
 
         }
 
+    private lateinit var rootView: View
     private var processingBarcode = AtomicBoolean(false)
     private lateinit var binding: ActivityMainBinding
     private lateinit var cameraInfo: CameraInfo
     private lateinit var cameraControl: CameraControl
-
+    private lateinit var adapter: BarcodeRecyclerViewAdapter
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding =DataBindingUtil.setContentView(this, R.layout.activity_main)
+        binding = DataBindingUtil.setContentView(this, R.layout.activity_main)
+        rootView = window.decorView.rootView
         binding.clearText.setOnClickListener {
             val myClipboard = this.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            val myClip = ClipData.newPlainText("barcode data", binding.BarcodeValue.text.toString())
+            val myClip = ClipData.newPlainText("barcode data", adapter.items.toString())
             myClipboard.setPrimaryClip(myClip)
             Toast.makeText(this, "Text copied to cliboard", Toast.LENGTH_SHORT).show()
         }
+        adapter = BarcodeRecyclerViewAdapter()
+        binding.BarcodeValue.layoutManager = LinearLayoutManager(this)
+        binding.BarcodeValue.adapter = adapter
         // Request camera permissions
         multiPermissionCallback.launch(
             REQUIRED_PERMISSIONS
@@ -114,6 +128,7 @@ class MainActivity : AppCompatActivity() {
 
             preview.setSurfaceProvider(binding.viewFinder.surfaceProvider)
 
+            draw_preview_rectangle()
             // ImageAnalysis
             val textBarcodeAnalyzer = initializeAnalyzer(screenAspectRatio, rotation)
             cameraProvider.unbindAll()
@@ -125,7 +140,6 @@ class MainActivity : AppCompatActivity() {
                 cameraControl = camera.cameraControl
                 cameraInfo = camera.cameraInfo
                 cameraControl.setLinearZoom(0.5f)
-
 
             } catch (exc: Exception) {
                 exc.printStackTrace()
@@ -167,30 +181,78 @@ class MainActivity : AppCompatActivity() {
             .build()
             .also {
 
-                it.setAnalyzer(executor, BarCodeAndQRCodeAnalyser { barcode ->
-                    /**
-                     * Change update  to true if you want to scan only one barcode or it will continue scaning after detecting for the first time
-                     */
-                    if (processingBarcode.compareAndSet(false, false)) {
-                        onBarcodeDetected(barcode)
-                    }
-                })
+                it.setAnalyzer(executor, BarCodeAndQRCodeAnalyser(box, this))
             }
     }
 
+    override fun onQRCodeFound(qrCode: Result) {
+        runOnUiThread {
+            adapter.clear()
+            adapter.addData(qrCode.text)
+        }
+    }
 
-    private fun onBarcodeDetected(barcodes: List<Barcode>) {
-        if (barcodes.isNotEmpty()) {
-
-            binding.BarcodeValue.text = barcodes[0].rawValue
-            if (barcodes[0].format == FORMAT_QR_CODE) {
-                Toast.makeText(this, "QR code Detected", Toast.LENGTH_SHORT).show()
-            } else {
-
-                Toast.makeText(this, "Bar code Detected", Toast.LENGTH_SHORT).show()
+    override fun onManyQRCodeFound(qrCodes: Array<Result>) {
+        Log.d("onBarcodeDetected", qrCodes.toString())
+        runOnUiThread {
+            adapter.clear()
+            qrCodes.forEach { barcode ->
+                barcode.toString().let { raw ->
+                    adapter.addData(raw)
+                }
             }
+        }
+    }
+
+    override fun qrCodeNotFound() {
+    }
+
+    private fun draw_preview_rectangle() {
+        box = Box(this)
+        box.layoutParams = ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
+        addContentView(
+            box, ViewGroup.LayoutParams(
+                binding.viewFinder.width,
+                binding.viewFinder.height
+            )
+        )
+    }
+
+    class Box internal constructor(context: Context?) : View(context) {
+
+        private val paint: Paint = Paint()
+
+        override fun onDraw(canvas: Canvas) {
+            // Override the onDraw() Method
+            super.onDraw(canvas)
+            paint.style = Paint.Style.STROKE
+            paint.color = Color.RED
+            paint.strokeWidth = 2f
+            // center coordinates of canvas
+            val x = width / 2
+            val y = height / 2
+
+            // Top left and Bottom right coordinates of rectangle
+            val x_topLeft = x - width / 3
+            val y_topLeft = y - height / 3
+            val x_bottomRight = x + width / 3
+            val y_bottomRight = y + height / 9
+
+            val LEFT = x_topLeft
+            val RIGHT = x_bottomRight
+            val TOP = y_topLeft
+            val BOTTOM = y_bottomRight
 
 
+            val b = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            val c = Canvas(b)
+            c.drawRect(LEFT.toFloat(), TOP.toFloat(), RIGHT.toFloat(), BOTTOM.toFloat(), paint)
+
+            //draw guide box
+            canvas.drawBitmap(b, 0f, 0f, null)
         }
     }
 }
