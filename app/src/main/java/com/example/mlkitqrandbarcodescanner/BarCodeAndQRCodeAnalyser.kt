@@ -1,6 +1,7 @@
 package com.example.mlkitqrandbarcodescanner
 
 import android.graphics.ImageFormat.*
+import android.graphics.Point
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import com.google.zxing.*
@@ -11,7 +12,10 @@ import java.util.*
 
 
 class BarCodeAndQRCodeAnalyser(
-    private val box: MainActivity.Box,
+    private val left: Int,
+    private val top: Int,
+    private val right: Int,
+    private val bottom: Int,
     private val listener: QRCodeFoundListener
 ) :
     ImageAnalysis.Analyzer {
@@ -19,27 +23,6 @@ class BarCodeAndQRCodeAnalyser(
     private val hints = Hashtable<DecodeHintType, Any>()
     val decodeFormats = Vector<BarcodeFormat>().apply {
         add(BarcodeFormat.QR_CODE)
-        addAll(
-            EnumSet.of(
-                BarcodeFormat.UPC_A,
-                BarcodeFormat.UPC_E,
-                BarcodeFormat.EAN_13,
-                BarcodeFormat.EAN_8,
-                BarcodeFormat.RSS_14,
-                BarcodeFormat.RSS_EXPANDED
-            )
-        )
-        addAll(
-            EnumSet.of(
-                BarcodeFormat.CODE_39,
-                BarcodeFormat.CODE_93,
-                BarcodeFormat.CODE_128,
-                BarcodeFormat.ITF,
-                BarcodeFormat.CODABAR
-            )
-        )
-        add(BarcodeFormat.QR_CODE)
-        add(BarcodeFormat.DATA_MATRIX)
     }
 
     init {
@@ -51,11 +34,11 @@ class BarCodeAndQRCodeAnalyser(
             val byteBuffer: ByteBuffer = image.planes[0].buffer
             val imageData = ByteArray(byteBuffer.capacity())
             byteBuffer.get(imageData)
+
             val source = PlanarYUVLuminanceSource(
                 imageData,
                 image.width, image.width,
-                0, 0,
-                image.width, image.height,
+                left, top, right, bottom,
                 false
             )
             val binaryBitmap = BinaryBitmap(HybridBinarizer(source))

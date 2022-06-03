@@ -39,8 +39,10 @@ const val RATIO_16_9_VALUE = 16.0 / 9.0
 class MainActivity : AppCompatActivity(), QRCodeFoundListener {
 
     private companion object {
-        var WIDTH = 0f
-        var HEIGHT = 0f
+        var LEFT = 0f
+        var TOP = 0f
+        var RIGHT = 0f
+        var BOTTOM = 0f
     }
 
 
@@ -72,10 +74,11 @@ class MainActivity : AppCompatActivity(), QRCodeFoundListener {
         binding = DataBindingUtil.setContentView(this, R.layout.activity_main)
         rootView = window.decorView.rootView
         binding.clearText.setOnClickListener {
-            val myClipboard = this.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            val myClip = ClipData.newPlainText("barcode data", adapter.items.toString())
-            myClipboard.setPrimaryClip(myClip)
-            Toast.makeText(this, "Text copied to cliboard", Toast.LENGTH_SHORT).show()
+//            val myClipboard = this.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+//            val myClip = ClipData.newPlainText("barcode data", adapter.items.toString())
+//            myClipboard.setPrimaryClip(myClip)
+//            Toast.makeText(this, "Text copied to cliboard", Toast.LENGTH_SHORT).show()
+            adapter.clear()
         }
         adapter = BarcodeRecyclerViewAdapter()
         binding.BarcodeValue.layoutManager = LinearLayoutManager(this)
@@ -173,7 +176,12 @@ class MainActivity : AppCompatActivity(), QRCodeFoundListener {
             .build()
             .also {
 
-                it.setAnalyzer(executor, BarCodeAndQRCodeAnalyser(box, this))
+                it.setAnalyzer(
+                    executor, BarCodeAndQRCodeAnalyser(
+                        LEFT.toInt(), TOP.toInt(),
+                        RIGHT.toInt(), BOTTOM.toInt(), this
+                    )
+                )
             }
     }
 
@@ -241,14 +249,21 @@ class MainActivity : AppCompatActivity(), QRCodeFoundListener {
             val rectW = (width / 1.3).toFloat()
             val rectH = (width / 1.3).toFloat()
 
-            WIDTH = rectW
-            HEIGHT = rectH
-            val left = centerOfCanvas.x - rectW / 2
-            val top = centerOfCanvas.y - rectH / 2
-            val right = centerOfCanvas.x + rectW / 2
-            val bottom = centerOfCanvas.y + rectH / 2
+            LEFT = centerOfCanvas.x - rectW / 2
+            TOP = centerOfCanvas.y - rectH / 2
+            RIGHT = centerOfCanvas.x + rectW / 2
+            BOTTOM = centerOfCanvas.y + rectH / 2
 
-            osCanvas.drawRect(left, top, right, bottom, paint)
+            val square = Rect(LEFT.toInt(), TOP.toInt(), RIGHT.toInt(), BOTTOM.toInt())
+            LEFT = square.left.toFloat()
+            TOP = square.top.toFloat()
+            RIGHT = square.width().toFloat()
+            BOTTOM = square.height().toFloat()
+
+            osCanvas.drawRect(
+                square,
+                paint
+            )
         }
     }
 }
