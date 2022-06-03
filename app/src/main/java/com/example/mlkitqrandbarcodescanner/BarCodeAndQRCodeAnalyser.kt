@@ -53,7 +53,7 @@ class BarCodeAndQRCodeAnalyser(
             byteBuffer.get(imageData)
             val source = PlanarYUVLuminanceSource(
                 imageData,
-                50, 50,
+                image.width, image.width,
                 0, 0,
                 image.width, image.height,
                 false

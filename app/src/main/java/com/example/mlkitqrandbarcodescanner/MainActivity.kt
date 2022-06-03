@@ -7,15 +7,13 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
+import android.graphics.*
 import android.os.Bundle
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
+import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -37,20 +35,20 @@ import kotlin.math.min
 val REQUIRED_PERMISSIONS = arrayOf(Manifest.permission.CAMERA)
 const val RATIO_4_3_VALUE = 4.0 / 3.0
 const val RATIO_16_9_VALUE = 16.0 / 9.0
-typealias BarcodeAnalyzerListener = (barcode: MutableList<Result>) -> Unit
 
 class MainActivity : AppCompatActivity(), QRCodeFoundListener {
+
+    private companion object {
+        var WIDTH = 0f
+        var HEIGHT = 0f
+    }
+
 
     private val executor by lazy {
         Executors.newSingleThreadExecutor()
     }
 
     private lateinit var box: Box
-
-    /**
-     * Process result from permission request dialog box, has the request
-     * been granted? If yes, start Camera. Otherwise display a toast
-     */
 
     private val multiPermissionCallback =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { map ->
@@ -61,11 +59,9 @@ class MainActivity : AppCompatActivity(), QRCodeFoundListener {
                     startCamera()
                 }
             }
-
         }
 
     private lateinit var rootView: View
-    private var processingBarcode = AtomicBoolean(false)
     private lateinit var binding: ActivityMainBinding
     private lateinit var cameraInfo: CameraInfo
     private lateinit var cameraControl: CameraControl
@@ -96,15 +92,11 @@ class MainActivity : AppCompatActivity(), QRCodeFoundListener {
         } else {
             requestAllPermissions()
         }
-
-
     }
 
 
     @SuppressLint("UnsafeExperimentalUsageError")
     private fun startCamera() {
-
-
         // Get screen metrics used to setup camera for full screen resolution
         val metrics = DisplayMetrics().also { binding.viewFinder.display.getRealMetrics(it) }
         val screenAspectRatio = aspectRatio(metrics.widthPixels, metrics.heightPixels)
@@ -210,8 +202,8 @@ class MainActivity : AppCompatActivity(), QRCodeFoundListener {
     private fun draw_preview_rectangle() {
         box = Box(this)
         box.layoutParams = ViewGroup.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT
+            binding.viewFinder.width,
+            binding.viewFinder.height
         )
         addContentView(
             box, ViewGroup.LayoutParams(
@@ -221,38 +213,42 @@ class MainActivity : AppCompatActivity(), QRCodeFoundListener {
         )
     }
 
-    class Box internal constructor(context: Context?) : View(context) {
+    class Box internal constructor(context: Context?) : LinearLayout(context) {
+        private var bitmap: Bitmap? = null
 
-        private val paint: Paint = Paint()
+        override fun dispatchDraw(canvas: Canvas) {
+            super.dispatchDraw(canvas)
+            if (bitmap == null) {
+                createWindowFrame()
+            }
+            bitmap?.let { canvas.drawBitmap(it, 0f, 0f, null) }
+        }
 
-        override fun onDraw(canvas: Canvas) {
-            // Override the onDraw() Method
-            super.onDraw(canvas)
-            paint.style = Paint.Style.STROKE
-            paint.color = Color.RED
-            paint.strokeWidth = 2f
-            // center coordinates of canvas
-            val x = width / 2
-            val y = height / 2
+        protected fun createWindowFrame() {
+            bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            val osCanvas = Canvas(bitmap!!)
+            val outerRectangle = RectF(0f, 0f, width.toFloat(), height.toFloat())
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+            paint.color = resources.getColor(R.color.cameraBackgroundColor)
+            paint.alpha = 99
+            osCanvas.drawRect(outerRectangle, paint)
+            paint.color = Color.TRANSPARENT
+            paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_OUT)
 
-            // Top left and Bottom right coordinates of rectangle
-            val x_topLeft = x - width / 3
-            val y_topLeft = y - height / 3
-            val x_bottomRight = x + width / 3
-            val y_bottomRight = y + height / 9
+            val canvasW = width
+            val canvasH = height
+            val centerOfCanvas = Point(canvasW / 2, canvasH / 2)
+            val rectW = (width / 1.3).toFloat()
+            val rectH = (width / 1.3).toFloat()
 
-            val LEFT = x_topLeft
-            val RIGHT = x_bottomRight
-            val TOP = y_topLeft
-            val BOTTOM = y_bottomRight
+            WIDTH = rectW
+            HEIGHT = rectH
+            val left = centerOfCanvas.x - rectW / 2
+            val top = centerOfCanvas.y - rectH / 2
+            val right = centerOfCanvas.x + rectW / 2
+            val bottom = centerOfCanvas.y + rectH / 2
 
-
-            val b = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-            val c = Canvas(b)
-            c.drawRect(LEFT.toFloat(), TOP.toFloat(), RIGHT.toFloat(), BOTTOM.toFloat(), paint)
-
-            //draw guide box
-            canvas.drawBitmap(b, 0f, 0f, null)
+            osCanvas.drawRect(left, top, right, bottom, paint)
         }
     }
 }
