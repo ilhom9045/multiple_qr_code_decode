@@ -3,17 +3,11 @@ package com.example.mlkitqrandbarcodescanner
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import android.content.pm.PackageManager
-import android.graphics.*
 import android.os.Bundle
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.View
-import android.view.ViewGroup
-import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -25,7 +19,6 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.mlkitqrandbarcodescanner.databinding.ActivityMainBinding
 import com.google.zxing.Result
 import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -38,7 +31,9 @@ const val RATIO_16_9_VALUE = 16.0 / 9.0
 
 class MainActivity : AppCompatActivity(), QRCodeFoundListener {
 
-    private companion object {
+    companion object {
+        var X = 0f
+        var Y = 0f
         var LEFT = 0f
         var TOP = 0f
         var RIGHT = 0f
@@ -123,7 +118,6 @@ class MainActivity : AppCompatActivity(), QRCodeFoundListener {
 
             preview.setSurfaceProvider(binding.viewFinder.surfaceProvider)
 
-            draw_preview_rectangle()
             // ImageAnalysis
             val textBarcodeAnalyzer = initializeAnalyzer(screenAspectRatio, rotation)
             cameraProvider.unbindAll()
@@ -169,6 +163,19 @@ class MainActivity : AppCompatActivity(), QRCodeFoundListener {
     }
 
     private fun initializeAnalyzer(screenAspectRatio: Int, rotation: Int): UseCase {
+
+//        val windowManager = windowManager
+//        val dm = DisplayMetrics()
+//        windowManager.defaultDisplay.getMetrics(dm)
+//        val screenWidth = dm.widthPixels
+//        val screenHeight = dm.heightPixels
+//        val scanWidth = screenWidth / 6 * 4
+//        val scanHeight = screenHeight / 3
+//        val left = (screenWidth - scanWidth) / 2
+//        val top = (screenHeight - scanHeight) / 2
+//        val right = scanWidth + left
+//        val bottom = scanHeight + top
+
         return ImageAnalysis.Builder()
             .setTargetAspectRatio(screenAspectRatio)
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
@@ -178,8 +185,7 @@ class MainActivity : AppCompatActivity(), QRCodeFoundListener {
 
                 it.setAnalyzer(
                     executor, BarCodeAndQRCodeAnalyser(
-                        LEFT.toInt(), TOP.toInt(),
-                        RIGHT.toInt(), BOTTOM.toInt(), this
+                        binding.box.getRect(), this
                     )
                 )
             }
@@ -205,65 +211,5 @@ class MainActivity : AppCompatActivity(), QRCodeFoundListener {
     }
 
     override fun qrCodeNotFound() {
-    }
-
-    private fun draw_preview_rectangle() {
-        box = Box(this)
-        box.layoutParams = ViewGroup.LayoutParams(
-            binding.viewFinder.width,
-            binding.viewFinder.height
-        )
-        addContentView(
-            box, ViewGroup.LayoutParams(
-                binding.viewFinder.width,
-                binding.viewFinder.height
-            )
-        )
-    }
-
-    class Box internal constructor(context: Context?) : LinearLayout(context) {
-        private var bitmap: Bitmap? = null
-
-        override fun dispatchDraw(canvas: Canvas) {
-            super.dispatchDraw(canvas)
-            if (bitmap == null) {
-                createWindowFrame()
-            }
-            bitmap?.let { canvas.drawBitmap(it, 0f, 0f, null) }
-        }
-
-        protected fun createWindowFrame() {
-            bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-            val osCanvas = Canvas(bitmap!!)
-            val outerRectangle = RectF(0f, 0f, width.toFloat(), height.toFloat())
-            val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-            paint.color = resources.getColor(R.color.cameraBackgroundColor)
-            paint.alpha = 99
-            osCanvas.drawRect(outerRectangle, paint)
-            paint.color = Color.TRANSPARENT
-            paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_OUT)
-
-            val canvasW = width
-            val canvasH = height
-            val centerOfCanvas = Point(canvasW / 2, canvasH / 2)
-            val rectW = (width / 1.3).toFloat()
-            val rectH = (width / 1.3).toFloat()
-
-            LEFT = centerOfCanvas.x - rectW / 2
-            TOP = centerOfCanvas.y - rectH / 2
-            RIGHT = centerOfCanvas.x + rectW / 2
-            BOTTOM = centerOfCanvas.y + rectH / 2
-
-            val square = Rect(LEFT.toInt(), TOP.toInt(), RIGHT.toInt(), BOTTOM.toInt())
-            LEFT = square.left.toFloat()
-            TOP = square.top.toFloat()
-            RIGHT = square.width().toFloat()
-            BOTTOM = square.height().toFloat()
-
-            osCanvas.drawRect(
-                square,
-                paint
-            )
-        }
     }
 }
