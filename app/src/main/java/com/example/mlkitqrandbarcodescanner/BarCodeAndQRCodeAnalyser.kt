@@ -1,34 +1,21 @@
 package com.example.mlkitqrandbarcodescanner
 
-import android.annotation.SuppressLint
+import android.R.attr
 import android.graphics.*
-import android.graphics.ImageFormat.*
-import android.media.Image
-import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.ImageProxy
+import android.util.Size
+import androidx.lifecycle.MutableLiveData
 import com.google.zxing.*
 import com.google.zxing.common.HybridBinarizer
 import com.google.zxing.multi.qrcode.QRCodeMultiReader
-import java.io.ByteArrayOutputStream
-import java.io.File
-import java.io.FileOutputStream
-import java.io.IOException
+import java.nio.ByteBuffer
 import java.util.*
 
 
 class BarCodeAndQRCodeAnalyser(
-    private val rect: Rect,
-    private val listener: QRCodeFoundListener
-) :
-    ImageAnalysis.Analyzer {
-
-    constructor(
-        x: Int,
-        y: Int,
-        width: Int,
-        height: Int,
-        listener: QRCodeFoundListener
-    ) : this(rect = Rect(x, y, width, height), listener = listener)
+    private val scannerOverlay: ScannerOverlay,
+    private val listener: QRCodeFoundListener,
+    private val lifeData: MutableLiveData<Bitmap>
+) : BaseAnalyser(scannerOverlay) {
 
     private val hints = Hashtable<DecodeHintType, Any>()
     val decodeFormats = Vector<BarcodeFormat>().apply {
@@ -41,16 +28,60 @@ class BarCodeAndQRCodeAnalyser(
         hints[DecodeHintType.POSSIBLE_FORMATS] = decodeFormats;
     }
 
-    @SuppressLint("UnsafeOptInUsageError")
-    override fun analyze(image: ImageProxy) {
-        if (image.format === YUV_420_888 || image.format === YUV_422_888 || image.format === YUV_444_888) {
-            image.image?.toBitmap()?.let {
-                    decode(it)
-//                cropBitmap(bitmap = it, rect)?.let {
+//    @SuppressLint("UnsafeOptInUsageError")
+//    override fun analyze(imageProxy: ImageProxy) {
+//        val mediaImage = imageProxy.image
+//        val rotation = imageProxy.imageInfo.rotationDegrees
+//        val scannerRect =
+//            getScannerRectToPreviewViewRelation(Size(imageProxy.width, imageProxy.height), rotation)
+//
+//        val image = imageProxy.image!!
+//        val cropRect = image.getCropRectAccordingToRotation(scannerRect, rotation)
+//        image.cropRect = cropRect
+//        val byteArray = YuvNV21Util.yuv420toNV21(image)
+//        val bitmap = BitmapUtil.getBitmap(
+//            byteArray,
+//            FrameMetadata(cropRect.width(), cropRect.height(), rotation)
+//        )
+//        imageProxy.close()
+////        val data = imageProxy.planes[0].buffer.toByteArray()
+////        decode(data, imageProxy)
+////        imageProxy.close()
+//    }
+
+//    fun decode(byteArray: ByteArray, imageProxy: ImageProxy) {
+//        val source = PlanarYUVLuminanceSource(
+//            byteArray,
+//            imageProxy.width,
+//            imageProxy.height,
+//            0,
+//            0,
+//            imageProxy.width,
+//            imageProxy.height,
+//            false
+//        )
+//        val binaryBitmap = BinaryBitmap(HybridBinarizer(source))
+//        try {
+//            val result: Array<Result> = multiQRCodeReader.decodeMultiple(binaryBitmap, hints)
+//            if (result.isNotEmpty()) {
+//                if (result.size == 1) {
+//                    listener.onQRCodeFound(result[0])
+//                } else {
+//                    listener.onManyQRCodeFound(result)
 //                }
-            }
-        }
-        image.close()
+//            }
+//        } catch (e: FormatException) {
+//            listener.qrCodeNotFound()
+//        } catch (e: ChecksumException) {
+//            listener.qrCodeNotFound()
+//        } catch (e: NotFoundException) {
+//            listener.qrCodeNotFound()
+//        }
+//    }
+
+    override fun onBitmapPrepared(bitmap: Bitmap) {
+        lifeData.postValue(bitmap)
+        decode(bitmap)
     }
 
     fun decode(bitmap: Bitmap) {
@@ -60,42 +91,12 @@ class BarCodeAndQRCodeAnalyser(
         bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
         val source = PlanarYUVLuminanceSource(
             convertRGBToYuv(pixels, ByteArray(width * height), width, height),
-            bitmap.width,
-            bitmap.height,
-            0,
-            0,
-            bitmap.width,
-            bitmap.height,
-            false
-        )
-        val binaryBitmap = BinaryBitmap(HybridBinarizer(source))
-        try {
-            val result: Array<Result> = multiQRCodeReader.decodeMultiple(binaryBitmap, hints)
-            if (result.isNotEmpty()) {
-                if (result.size == 1) {
-                    listener.onQRCodeFound(result[0])
-                } else {
-                    listener.onManyQRCodeFound(result)
-                }
-            }
-        } catch (e: FormatException) {
-            listener.qrCodeNotFound()
-        } catch (e: ChecksumException) {
-            listener.qrCodeNotFound()
-        } catch (e: NotFoundException) {
-            listener.qrCodeNotFound()
-        }
-    }
-
-    fun decodeFormRect(data: ByteArray, rect: Rect, width: Int, height: Int) {
-        val source = PlanarYUVLuminanceSource(
-            data,
             width,
             height,
             0,
             0,
-            rect.width(),
-            rect.height(),
+            width,
+            height,
             false
         )
         val binaryBitmap = BinaryBitmap(HybridBinarizer(source))
@@ -115,35 +116,6 @@ class BarCodeAndQRCodeAnalyser(
         } catch (e: NotFoundException) {
             listener.qrCodeNotFound()
         }
-    }
-
-
-    fun scaleCenterCrop(
-        source: Bitmap, newHeight: Int,
-        newWidth: Int
-    ): Bitmap? {
-        val sourceWidth = source.width
-        val sourceHeight = source.height
-        val xScale = newWidth.toFloat() / sourceWidth
-        val yScale = newHeight.toFloat() / sourceHeight
-        val scale = xScale.coerceAtLeast(yScale)
-
-        // Now get the size of the source bitmap when scaled
-        val scaledWidth = scale * sourceWidth
-        val scaledHeight = scale * sourceHeight
-        val left = (newWidth - scaledWidth) / 2
-        val top = (newHeight - scaledHeight) / 2
-        val targetRect = RectF(
-            left, top, left + scaledWidth, top
-                    + scaledHeight
-        ) //from ww w  .j a va 2s. co m
-        val dest = Bitmap.createBitmap(
-            newWidth, newHeight,
-            source.config
-        )
-        val canvas = Canvas(dest)
-        canvas.drawBitmap(source, null, targetRect, null)
-        return dest
     }
 
     private fun convertRGBToYuv(
@@ -162,101 +134,11 @@ class BarCodeAndQRCodeAnalyser(
         return yuv420sp
     }
 
-    private fun decodeFromRGB(
-        data: IntArray,
-        width: Int,
-        height: Int,
-        hintTypeMap: Map<DecodeHintType, *>
-    ): Result? {
 
-        val source = RGBLuminanceSource(width, height, data)
-        val binaryBitmap = BinaryBitmap(HybridBinarizer(source))
-        try {
-            return MultiFormatReader().decode(binaryBitmap, hintTypeMap)
-        } catch (e: NotFoundException) {
-            e.printStackTrace()
-        }
-        return null
-    }
+    interface ScannerOverlay {
 
-    fun ImageProxy.convertImageProxyToBitmap(): Bitmap? {
-        return try {
-            val buffer = planes[0].buffer
-            val bytes = ByteArray(buffer.capacity()).also { buffer.get(it) }
-            return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
-        }
-    }
+        val size: Size
 
-    fun Image.toBitmap(): Bitmap? {
-        return try {
-            val yBuffer = planes[0].buffer // Y
-            val vuBuffer = planes[2].buffer // VU
-
-            val ySize = yBuffer.remaining()
-            val vuSize = vuBuffer.remaining()
-
-            val nv21 = ByteArray(ySize + vuSize)
-
-            yBuffer.get(nv21, 0, ySize)
-            vuBuffer.get(nv21, ySize, vuSize)
-
-            val yuvImage = YuvImage(nv21, NV21, this.width, this.height, null)
-            val out = ByteArrayOutputStream()
-            yuvImage.compressToJpeg(Rect(0, 0, yuvImage.width, yuvImage.height), 50, out)
-            val imageBytes = out.toByteArray()
-            BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    fun decodeFrame(data: ByteArray, rect: Rect, width: Int, height: Int): LuminanceSource {
-        val source = PlanarYUVLuminanceSource(
-            data,
-            width,
-            height,
-            0,
-            0,
-            rect.width(),
-            rect.height(),
-            false
-        )
-        return source
-    }
-
-    fun cropBitmap(bitmap: Bitmap, rect: Rect): Bitmap? {
-        return try {
-            val subImage = Bitmap.createBitmap(
-                rect.width(),
-                rect.height(), Bitmap.Config.ARGB_8888
-            )
-            val c = Canvas(subImage)
-            c.drawBitmap(
-                bitmap, rect,
-                Rect(0, 0, rect.width(), rect.height()), null
-            )
-
-            val file = File("/data/data/${BuildConfig.APPLICATION_ID}/cache", "qrCode.png")
-
-            try {
-                FileOutputStream(file).use { out ->
-                    subImage.compress(
-                        Bitmap.CompressFormat.PNG,
-                        100,
-                        out
-                    )
-                }
-            } catch (e: IOException) {
-                e.printStackTrace()
-            }
-
-            return subImage
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
-        }
+        val scanRect: RectF
     }
 }

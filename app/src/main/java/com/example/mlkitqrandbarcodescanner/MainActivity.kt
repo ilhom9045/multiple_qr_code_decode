@@ -3,10 +3,13 @@ package com.example.mlkitqrandbarcodescanner
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.ContentValues.TAG
 import android.content.pm.PackageManager
+import android.content.res.Resources
+import android.graphics.Bitmap
 import android.os.Bundle
-import android.util.DisplayMetrics
-import android.util.Log
+import android.util.*
+import android.view.Surface
 import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -15,8 +18,8 @@ import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.databinding.DataBindingUtil
+import androidx.lifecycle.MutableLiveData
 import androidx.recyclerview.widget.LinearLayoutManager
-import com.example.mlkitqrandbarcodescanner.databinding.ActivityMainBinding
 import com.google.zxing.Result
 import java.util.concurrent.Executors
 import kotlin.math.abs
@@ -28,6 +31,8 @@ import kotlin.math.min
 val REQUIRED_PERMISSIONS = arrayOf(Manifest.permission.CAMERA)
 const val RATIO_4_3_VALUE = 4.0 / 3.0
 const val RATIO_16_9_VALUE = 16.0 / 9.0
+private const val TARGET_PREVIEW_WIDTH = 960
+private const val TARGET_PREVIEW_HEIGHT = 1280
 
 class MainActivity : AppCompatActivity(), QRCodeFoundListener {
 
@@ -40,12 +45,10 @@ class MainActivity : AppCompatActivity(), QRCodeFoundListener {
         var BOTTOM = 0f
     }
 
-
     private val executor by lazy {
         Executors.newSingleThreadExecutor()
     }
 
-    private lateinit var box: Box
 
     private val multiPermissionCallback =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { map ->
@@ -58,8 +61,10 @@ class MainActivity : AppCompatActivity(), QRCodeFoundListener {
             }
         }
 
+    private val liveData = MutableLiveData<Bitmap>()
+
     private lateinit var rootView: View
-    private lateinit var binding: ActivityMainBinding
+    private lateinit var binding: com.example.mlkitqrandbarcodescanner.databinding.ActivityMainBinding
     private lateinit var cameraInfo: CameraInfo
     private lateinit var cameraControl: CameraControl
     private lateinit var adapter: BarcodeRecyclerViewAdapter
@@ -78,6 +83,7 @@ class MainActivity : AppCompatActivity(), QRCodeFoundListener {
         adapter = BarcodeRecyclerViewAdapter()
         binding.BarcodeValue.layoutManager = LinearLayoutManager(this)
         binding.BarcodeValue.adapter = adapter
+        binding.olActScanner.type = ScannerOverlayImpl.Type.SEPAQR
         // Request camera permissions
         multiPermissionCallback.launch(
             REQUIRED_PERMISSIONS
@@ -90,54 +96,52 @@ class MainActivity : AppCompatActivity(), QRCodeFoundListener {
         } else {
             requestAllPermissions()
         }
+        liveData.observe(this) {
+            if (it != null) {
+                binding.preViewImageView.setImageBitmap(it)
+            }
+        }
     }
 
-
-    @SuppressLint("UnsafeExperimentalUsageError")
     private fun startCamera() {
-        // Get screen metrics used to setup camera for full screen resolution
-        val metrics = DisplayMetrics().also { binding.viewFinder.display.getRealMetrics(it) }
-        val screenAspectRatio = aspectRatio(metrics.widthPixels, metrics.heightPixels)
-        val rotation = binding.viewFinder.display.rotation
-
-        // Bind the CameraProvider to the LifeCycleOwner
-        val cameraSelector =
-            CameraSelector.Builder().requireLensFacing(CameraSelector.LENS_FACING_BACK).build()
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
-        cameraProviderFuture.addListener({
 
-            // CameraProvider
+        cameraProviderFuture.addListener({
+            // Used to bind the lifecycle of cameras to the lifecycle owner
             val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
 
             // Preview
             val preview = Preview.Builder()
-                .setTargetAspectRatio(screenAspectRatio)
-                // Set initial target rotation
-                .setTargetRotation(rotation)
+                .setTargetResolution(Size(TARGET_PREVIEW_WIDTH, TARGET_PREVIEW_HEIGHT))
                 .build()
 
-            preview.setSurfaceProvider(binding.viewFinder.surfaceProvider)
+            val imageAnalyzer = ImageAnalysis.Builder()
+                .setTargetResolution(Size(TARGET_PREVIEW_WIDTH, TARGET_PREVIEW_HEIGHT))
+                .build()
+                .also {
+                    it.setAnalyzer(executor, BarCodeAndQRCodeAnalyser(binding.olActScanner, this,liveData))
+                }
 
-            // ImageAnalysis
-            val textBarcodeAnalyzer = initializeAnalyzer(screenAspectRatio, rotation)
-            cameraProvider.unbindAll()
+            // Select back camera
+            val cameraSelector = CameraSelector
+                .Builder()
+                .requireLensFacing(CameraSelector.LENS_FACING_BACK).build()
 
             try {
-                val camera = cameraProvider.bindToLifecycle(
-                    this, cameraSelector, preview, textBarcodeAnalyzer
-                )
-                cameraControl = camera.cameraControl
-                cameraInfo = camera.cameraInfo
-                cameraControl.setLinearZoom(0.5f)
+                // Unbind use cases before rebinding
+                cameraProvider.unbindAll()
 
-            } catch (exc: Exception) {
-                exc.printStackTrace()
-                //Log.e(TAG, "Use case binding failed", exc)
+                // Bind use cases to camera
+                val camera =
+                    cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalyzer)
+                preview.setSurfaceProvider(binding.viewFinder.surfaceProvider)
+
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
 
         }, ContextCompat.getMainExecutor(this))
     }
-
 
     private fun requestAllPermissions() {
         multiPermissionCallback.launch(
@@ -162,30 +166,17 @@ class MainActivity : AppCompatActivity(), QRCodeFoundListener {
         return AspectRatio.RATIO_16_9
     }
 
-    private fun initializeAnalyzer(screenAspectRatio: Int, rotation: Int): UseCase {
-
-//        val windowManager = windowManager
-//        val dm = DisplayMetrics()
-//        windowManager.defaultDisplay.getMetrics(dm)
-//        val screenWidth = dm.widthPixels
-//        val screenHeight = dm.heightPixels
-//        val scanWidth = screenWidth / 6 * 4
-//        val scanHeight = screenHeight / 3
-//        val left = (screenWidth - scanWidth) / 2
-//        val top = (screenHeight - scanHeight) / 2
-//        val right = scanWidth + left
-//        val bottom = scanHeight + top
-
+    private fun initializeAnalyzer(size: Int): UseCase {
+        binding.olActScanner.type = ScannerOverlayImpl.Type.SEPAQR
         return ImageAnalysis.Builder()
-            .setTargetAspectRatio(screenAspectRatio)
-            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-            .setTargetRotation(rotation)
+            .setTargetRotation(size)
             .build()
             .also {
-
                 it.setAnalyzer(
                     executor, BarCodeAndQRCodeAnalyser(
-                        binding.box.getRect(), this
+                        binding.olActScanner,
+                        this,
+                        liveData
                     )
                 )
             }
@@ -211,5 +202,13 @@ class MainActivity : AppCompatActivity(), QRCodeFoundListener {
     }
 
     override fun qrCodeNotFound() {
+        Log.d("notFound", "")
     }
 }
+
+val Number.toPx
+    get() = TypedValue.applyDimension(
+        TypedValue.COMPLEX_UNIT_DIP,
+        this.toFloat(),
+        Resources.getSystem().displayMetrics
+    )

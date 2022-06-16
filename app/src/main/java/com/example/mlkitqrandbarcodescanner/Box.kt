@@ -1,8 +1,11 @@
 package com.example.mlkitqrandbarcodescanner
 
 import android.content.Context
+import android.content.res.Resources
 import android.graphics.*
 import android.util.AttributeSet
+import android.util.Log
+import android.util.TypedValue
 import android.view.View
 
 class Box internal constructor(context: Context?, attr: AttributeSet) :
@@ -51,7 +54,8 @@ class Box internal constructor(context: Context?, attr: AttributeSet) :
         MainActivity.TOP = top
         MainActivity.RIGHT = right
         MainActivity.BOTTOM = bottom
-
+        val w = width
+        val h = height
         osCanvas.drawRect(
             square,
             paint
@@ -63,3 +67,4 @@ class Box internal constructor(context: Context?, attr: AttributeSet) :
     }
 
 }
+
