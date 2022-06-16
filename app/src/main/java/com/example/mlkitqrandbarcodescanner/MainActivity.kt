@@ -20,6 +20,7 @@ import androidx.core.content.ContextCompat
 import androidx.databinding.DataBindingUtil
 import androidx.lifecycle.MutableLiveData
 import androidx.recyclerview.widget.LinearLayoutManager
+import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.zxing.Result
 import java.util.concurrent.Executors
 import kotlin.math.abs
@@ -62,12 +63,17 @@ class MainActivity : AppCompatActivity(), QRCodeFoundListener {
         }
 
     private val liveData = MutableLiveData<Bitmap>()
-
     private lateinit var rootView: View
     private lateinit var binding: com.example.mlkitqrandbarcodescanner.databinding.ActivityMainBinding
     private lateinit var cameraInfo: CameraInfo
     private lateinit var cameraControl: CameraControl
     private lateinit var adapter: BarcodeRecyclerViewAdapter
+    private lateinit var imageAnalyzer: ImageAnalysis
+    private lateinit var preview: Preview
+    private lateinit var cameraProvider: ProcessCameraProvider
+    private lateinit var cameraSelector: CameraSelector
+
+    private var pause = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -85,6 +91,16 @@ class MainActivity : AppCompatActivity(), QRCodeFoundListener {
         binding.BarcodeValue.adapter = adapter
         binding.olActScanner.type = ScannerOverlayImpl.Type.SEPAQR
         // Request camera permissions
+        findViewById<FloatingActionButton>(R.id.pause).setOnClickListener {
+            if (pause) {
+                cameraProvider.unbindAll()
+                cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalyzer)
+            } else {
+                cameraProvider.unbind(preview)
+                cameraProvider.unbind(imageAnalyzer)
+            }
+            pause = !pause
+        }
         multiPermissionCallback.launch(
             REQUIRED_PERMISSIONS
         )
@@ -108,22 +124,25 @@ class MainActivity : AppCompatActivity(), QRCodeFoundListener {
 
         cameraProviderFuture.addListener({
             // Used to bind the lifecycle of cameras to the lifecycle owner
-            val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
+            cameraProvider = cameraProviderFuture.get()
 
             // Preview
-            val preview = Preview.Builder()
+            preview = Preview.Builder()
                 .setTargetResolution(Size(TARGET_PREVIEW_WIDTH, TARGET_PREVIEW_HEIGHT))
                 .build()
 
-            val imageAnalyzer = ImageAnalysis.Builder()
+            imageAnalyzer = ImageAnalysis.Builder()
                 .setTargetResolution(Size(TARGET_PREVIEW_WIDTH, TARGET_PREVIEW_HEIGHT))
                 .build()
                 .also {
-                    it.setAnalyzer(executor, BarCodeAndQRCodeAnalyser(binding.olActScanner, this,liveData))
+                    it.setAnalyzer(
+                        executor,
+                        BarCodeAndQRCodeAnalyser(binding.olActScanner, this, liveData)
+                    )
                 }
 
             // Select back camera
-            val cameraSelector = CameraSelector
+            cameraSelector = CameraSelector
                 .Builder()
                 .requireLensFacing(CameraSelector.LENS_FACING_BACK).build()
 
@@ -132,9 +151,9 @@ class MainActivity : AppCompatActivity(), QRCodeFoundListener {
                 cameraProvider.unbindAll()
 
                 // Bind use cases to camera
-                val camera =
-                    cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalyzer)
+                cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalyzer)
                 preview.setSurfaceProvider(binding.viewFinder.surfaceProvider)
+
 
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -164,22 +183,6 @@ class MainActivity : AppCompatActivity(), QRCodeFoundListener {
             return AspectRatio.RATIO_4_3
         }
         return AspectRatio.RATIO_16_9
-    }
-
-    private fun initializeAnalyzer(size: Int): UseCase {
-        binding.olActScanner.type = ScannerOverlayImpl.Type.SEPAQR
-        return ImageAnalysis.Builder()
-            .setTargetRotation(size)
-            .build()
-            .also {
-                it.setAnalyzer(
-                    executor, BarCodeAndQRCodeAnalyser(
-                        binding.olActScanner,
-                        this,
-                        liveData
-                    )
-                )
-            }
     }
 
     override fun onQRCodeFound(qrCode: Result) {
