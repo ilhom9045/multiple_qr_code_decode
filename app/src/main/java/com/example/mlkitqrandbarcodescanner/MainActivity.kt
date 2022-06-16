@@ -90,6 +90,7 @@ class MainActivity : AppCompatActivity(), QRCodeFoundListener {
         binding.BarcodeValue.layoutManager = LinearLayoutManager(this)
         binding.BarcodeValue.adapter = adapter
         binding.olActScanner.type = ScannerOverlayImpl.Type.SEPAQR
+
         // Request camera permissions
         findViewById<FloatingActionButton>(R.id.pause).setOnClickListener {
             if (pause) {
